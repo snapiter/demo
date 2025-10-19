@@ -1,0 +1,69 @@
+services:
+  snapiter-frontend:
+    image: ghcr.io/snapiter/snapiter:latest
+    restart: unless-stopped
+    ports:
+      - "8000:3000"
+    env_file:
+      - .env.example
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000"]
+      interval: 60s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+  snapiterpostgres:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: snapiter
+      POSTGRES_USER: snapiter
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      - snapiter_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U snapiter -d snapiter"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  snapiterbackend:
+    image: ghcr.io/snapiter/backend:latest
+    restart: unless-stopped
+    pull_policy: always
+    depends_on:
+      snapiterpostgres:
+        condition: service_healthy
+    expose:
+      - "8080"
+    environment:
+      SPRING_PROFILES_ACTIVE: prod
+      SPRING_R2DBC_URL: r2dbc:postgresql://snapiterpostgres:5432/snapiter
+      SPRING_R2DBC_USERNAME: snapiter
+      SPRING_R2DBC_PASSWORD: ${POSTGRES_PASSWORD}
+      SPRING_FLYWAY_URL: jdbc:postgresql://snapiterpostgres:5432/snapiter
+      SPRING_FLYWAY_USER: snapiter
+      SPRING_FLYWAY_PASSWORD: ${POSTGRES_PASSWORD}
+      SERVER_FORWARD_HEADERS_STRATEGY: framework
+      SPRING_MAIL_HOST: ${SPRING_MAIL_HOST}
+      SPRING_MAIL_PORT: ${SPRING_MAIL_PORT}
+      SPRING_MAIL_USERNAME: ${SPRING_MAIL_USERNAME}
+      SPRING_MAIL_PASSWORD: ${SPRING_MAIL_PASSWORD}
+      SPRING_MAIL_PROPERTIES_MAIL_SMTP_AUTH: ${SPRING_MAIL_PROPERTIES_MAIL_SMTP_AUTH}
+      SPRING_MAIL_PROPERTIES_MAIL_SMTP_STARTTLS_ENABLE: ${SPRING_MAIL_PROPERTIES_MAIL_SMTP_STARTTLS_ENABLE}
+      JWT_SECRET: ${JWT_SECRET}
+      FRONTEND_EMAIL_URL: ${FRONTEND_EMAIL_URL}
+
+      # AWS / MinIO
+      BUCKET: ${BUCKET}
+      AWS_END_POINT: ${AWS_END_POINT}
+      AWS_ACCESS_KEY: ${AWS_ACCESS_KEY}
+      AWS_SECRET_KEY: ${AWS_SECRET_KEY}
+      AWS_REGION: ${AWS_REGION}
+      JAVA_TOOL_OPTIONS: >-
+         -XX:MaxDirectMemorySize=256M
+         -XX:+ExitOnOutOfMemoryError
+
+volumes:
+  snapiter_postgres_data:
