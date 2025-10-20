@@ -5,28 +5,13 @@ services:
     ports:
       - "8000:3000"
     env_file:
-      - .env.example
+      - .env
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:3000"]
       interval: 60s
       timeout: 5s
       retries: 3
       start_period: 10s
-
-  snapiterpostgres:
-    image: postgres:17-alpine
-    restart: unless-stopped
-    environment:
-      POSTGRES_DB: snapiter
-      POSTGRES_USER: snapiter
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
-    volumes:
-      - snapiter_postgres_data:/var/lib/postgresql/data
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U snapiter -d snapiter"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
 
   snapiterbackend:
     image: ghcr.io/snapiter/backend:latest
@@ -35,8 +20,10 @@ services:
     depends_on:
       snapiterpostgres:
         condition: service_healthy
-    expose:
-      - "8080"
+    ports:
+      - "8080:8080"
+    env_file:
+      - .env
     environment:
       SPRING_PROFILES_ACTIVE: prod
       SPRING_R2DBC_URL: r2dbc:postgresql://snapiterpostgres:5432/snapiter
@@ -45,7 +32,6 @@ services:
       SPRING_FLYWAY_URL: jdbc:postgresql://snapiterpostgres:5432/snapiter
       SPRING_FLYWAY_USER: snapiter
       SPRING_FLYWAY_PASSWORD: ${POSTGRES_PASSWORD}
-      SERVER_FORWARD_HEADERS_STRATEGY: framework
       SPRING_MAIL_HOST: ${SPRING_MAIL_HOST}
       SPRING_MAIL_PORT: ${SPRING_MAIL_PORT}
       SPRING_MAIL_USERNAME: ${SPRING_MAIL_USERNAME}
@@ -64,6 +50,51 @@ services:
       JAVA_TOOL_OPTIONS: >-
          -XX:MaxDirectMemorySize=256M
          -XX:+ExitOnOutOfMemoryError
+
+############## 
+# Supporting services
+##############
+
+  snapiterpostgres:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    env_file:
+      - .env
+    volumes:
+      - snapiter_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U snapiter -d snapiter"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  mailpit:
+    image: axllent/mailpit:latest
+    restart: always
+    ports:
+      - "8025:8025"  # Web UI
+      - "1025:1025"  # SMTP Server
+
+  minio:
+    image: minio/minio:latest
+    command: server /data --console-address ":9001"
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    environment:
+      MINIO_ROOT_USER: admin
+      MINIO_ROOT_PASSWORD: password
+
+  minio-init:
+    image: minio/mc:latest
+    depends_on:
+      - minio
+    entrypoint: >
+      sh -c "
+        sleep 5 &&
+        mc alias set local http://minio:9000 admin password &&
+        mc mb local/snapiter || true
+      "
 
 volumes:
   snapiter_postgres_data:
